@@ -1,0 +1,10 @@
+python-dotenv==1.0.0
+langchain==0.1.0
+langchain-openai==0.0.2
+pinecone-client==2.2.4
+milvus==2.3.3
+chromadb==0.4.22
+faiss-cpu==1.7.4 
+tiktoken==0.5.2 
+pypdf==3.17.4 
+black==23.12.1
