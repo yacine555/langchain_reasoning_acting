@@ -17,6 +17,7 @@ Here are the PIP modules used:
 
 - [**python-dotenv (1.0.0)**](https://pypi.org/project/python-dotenv/1.0.0/): Reads key-value pairs from a `.env` file and 
 - [**tiktoken**](https://pypi.org/project/tiktoken/): tiktoken is a fast BPE (Byte pair encoding) tokeniser for use with OpenAI's models.
+- [**Ollama**](https://ollama.ai/) for local LLMs
 
 ### Installation
 
@@ -58,3 +59,10 @@ python main.py
 python ingestion.py
 ```
 
+
+
+### Download Web page resources
+
+```
+wget -mpEk https://python.langchain.com/docs/get_started
+```
