@@ -14,6 +14,12 @@ tiktoken = "==0.5.2"
 requests = "*"
 langchain-openai = "==0.0.2"
 langchain = "==0.1.0"
+faiss-cpu = "==1.7.4"
+pypdf = "==3.17.4"
+streamlit = "==1.30.0"
+streamlit-chat = "==0.1.1"
+beautifulsoup4 = "==4.12.2"
+lxml = "==5.1.0"
 
 [dev-packages]
 

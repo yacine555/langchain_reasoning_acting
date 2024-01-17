@@ -1,30 +1,45 @@
 import os
+from typing import Any, Dict, List
 
 from langchain_community.document_loaders import TextLoader
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.document_loaders import ReadTheDocsLoader
+from langchain_community.document_loaders import DocusaurusLoader
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+
 from langchain_openai.llms import OpenAI
+from langchain_openai.chat_models import ChatOpenAI
 from langchain_community.llms import Ollama
+from langchain_community.chat_models import ChatOllama
 from langchain_openai.embeddings import OpenAIEmbeddings
 from langchain_community.embeddings import OllamaEmbeddings
+
 
 from langchain_community.vectorstores import Pinecone
 from langchain_community.vectorstores import milvus
 from langchain_community.vectorstores import Chroma
 from langchain_community.vectorstores import FAISS
 from langchain.chains import RetrievalQA
+from langchain.chains import ConversationalRetrievalChain
+from common.consts import INDEX_NAME
+
+from backend.callbacks import AgentCallbackHandler
+from langchain.callbacks import FileCallbackHandler
+from langchain.callbacks.base import BaseCallbackManager
+from loguru import logger
+
+logfile = "./logs/output.log"
+logger.add(logfile, colorize=True, enqueue=True)
+handler = FileCallbackHandler(logfile)
+callback_manager = BaseCallbackManager([handler])
 
 import pinecone
 import chromadb
 
 
 
-
-
-
-def ingest_docs(ingest_setup:int, index_name:str)->None:
+def ingest_docs(ingest_setup:int, index_name:str) -> Any:
     """
     ingest_setup: type of setup to implement React: the embeding, llm and vector database
         1: OpenAI with Pinecone with text
@@ -34,6 +49,7 @@ def ingest_docs(ingest_setup:int, index_name:str)->None:
     index_name: name of the index for the vectore store 
     """
 
+    qa_vectorstore = None
 
     match ingest_setup:
         case 1:
@@ -63,19 +79,22 @@ def ingest_docs(ingest_setup:int, index_name:str)->None:
 
                 print(f"Text Splitted into {len(texts)} chunks")
 
-                pinecone_vs = Pinecone.from_documents(
+                qa_vectorstore = Pinecone.from_documents(
                     texts, embeddings, index_name=index_name
                 )
 
             else:
                 print("Pinecone db already loaded DB loaded!")
-                index = pinecone.Index(index_name)
-                embeddings = OpenAIEmbeddings()
-                pinecone_vs = Pinecone(index, embeddings, "text")
+                # index = pinecone.Index(index_name)
+                # qa_vectorstore = Pinecone(index, embeddings, "text")
+
+                qa_vectorstore = Pinecone.from_existing_index(
+                    index_name=INDEX_NAME, embedding=embeddings
+                )
 
 
             qa_pinecone = RetrievalQA.from_chain_type(
-                llm=OpenAI(), chain_type="stuff", retriever=pinecone_vs.as_retriever()
+                llm=OpenAI(), chain_type="stuff", retriever=qa_vectorstore.as_retriever()
             )
 
             query = "What is a vector DB? Give me a 15 word answer for a beginner"
@@ -84,39 +103,41 @@ def ingest_docs(ingest_setup:int, index_name:str)->None:
             print(result)
 
         case 2:
-            print("Setting up Chroma VectoreStore!")
-
 
             embeddings_local = OllamaEmbeddings()
 
-            persist_directory = "./chroma_db"
-            chroma_vs= Chroma(persist_directory=persist_directory, embedding_function=embeddings_local)
+            persist_directory = "./vectorestore/chroma_db"
 
-            if chroma_vs == None:
+            if not os.path.exists(persist_directory):
+
+                print("Loading documents into Chroma DB...")
 
                 pdf_path = "./docs/2210.03629.pdf"
             
                 loader_pdf= PyPDFLoader(file_path=pdf_path)
                 documents_pdf = loader_pdf.load()
 
+                print(f"loaded {len(documents_pdf)} documents")
+
                 text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=30, separator="\n")
                 pdf_doc = text_splitter.split_documents(documents_pdf)
 
                 print(f"PDF Splitted into {len(pdf_doc)} chunks")
 
-                chroma_vs = Chroma.from_documents(
+                qa_vectorstore = Chroma.from_documents(
                     documents=pdf_doc,
                     embedding=embeddings_local,
                     persist_directory=persist_directory,
                 )
-                chroma_vs.persist()
+                qa_vectorstore.persist()
             else:
+                qa_vectorstore = Chroma(persist_directory=persist_directory, embedding_function=embeddings_local)
                 print("Chroma DB loaded!")
 
             llm_locale = Ollama(model="llama2")
 
             qa_chrome = RetrievalQA.from_chain_type(
-                llm=llm_locale, chain_type="stuff", retriever=chroma_vs.as_retriever()
+                llm=llm_locale, chain_type="stuff", retriever=qa_vectorstore.as_retriever()
             )
 
             query = "What is a vector DB? Give me a 15 word answer for a beginner"
@@ -124,63 +145,163 @@ def ingest_docs(ingest_setup:int, index_name:str)->None:
             print(result)
 
             # To cleanup, you can delete the collection
-            chroma_vs.delete_collection()
-            chroma_vs.persist()
+            qa_vectorstore.delete_collection()
+            qa_vectorstore.persist()
             # Or just nuke the persist directory: !rm -rf db/
 
         case 3:
             print("Setting up FAISS VectoreStore!")
 
-            readthedoc_path = "./docs/python.langchain.com"
-
-            loader_read_ted_docs = ReadTheDocsLoader(path=readthedoc_path)
-            documents_raw = loader_read_ted_docs.load()
-
-            print(f"loaded {len(documents_raw)} documents")
-
-            text_splitter_rec = RecursiveCharacterTextSplitter(chunk_size=400, chunk_overlap=50, separators=["\n\n", "\n", " ", ""])
-            raw_docs = text_splitter_rec.split_documents(documents=documents_raw)
-
-            print(f"Splitted into {len(raw_docs)} chunks")
-
-
-            is_document_loaded = True
-            faiss_vs = None
-            
             embeddings_local = OllamaEmbeddings()
-            faiss_index_name = "faiss_index_react"
+            faiss_vs = None
 
-            if not is_document_loaded:
+            faiss_path= "./vectorestore/faiss"
 
-                faiss_vs = FAISS.from_documents(
-                    documents=texts,
+            if not os.path.exists(faiss_path):
+
+                print("Loading documents into FAISS DB...")
+
+                readthedoc_path2 = "./docs/python.langchain.com"
+                readthedoc_path = "./docs/langchain.readthedocs.io2short"
+                docusaurus_path = "https://python.langchain.com"
+
+                # laod ReadTheDocs
+                # loader_read_ted_docs = ReadTheDocsLoader(path=readthedoc_path)
+                # documents_raw = loader_read_ted_docs.load()
+
+                #load Docusaurus
+                loader_docusaurus = DocusaurusLoader(docusaurus_path,verify_ssl=False)
+                documents_raw = loader_docusaurus.load()
+
+                print(f"loaded {len(documents_raw)} documents")
+
+                #text_splitter_rec = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50, separators=["\n\n", "\n", " ", ""])
+                text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=30, separator="\n")
+                #raw_chunks = text_splitter_rec.split_documents(documents=documents_raw)
+                raw_chunks = text_splitter.split_documents(documents=documents_raw)
+
+                for chunk in raw_chunks:
+                    old_path = chunk.metadata["source"]
+                    new_url = old_path.replace("docs/","https://")
+                    chunk.metadata.update({"source": new_url})
+
+
+                print(f"Splitted into {len(raw_chunks)} chunks")
+
+
+                # text_path = "./docs/vectorestore.txt"
+            
+                # loader = TextLoader(text_path)
+                # documents = loader.load()
+
+                # text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=30, separator="\n")
+                # texts = text_splitter.split_documents(documents)
+
+                qa_vectorstore = FAISS.from_documents(
+                    documents=raw_chunks,
                     embedding=embeddings_local
                 )
 
-                faiss_vs.save_local(faiss_index_name)
+                qa_vectorstore.save_local(faiss_path)
+
             else:
-                faiss_vs = FAISS.load_local(folder_path="./faiss_index_react", embeddings = embeddings_local, index_name= "index")
+                qa_vectorstore = FAISS.load_local(folder_path=faiss_path, embeddings = embeddings_local, index_name= "index")
+                print("FAISS DB loaded!")
 
             llm_locale = Ollama(model="phi")
 
             query="Give me the gist of React in 3 sentences"
             
-            qa_faiss = RetrievalQA.from_chain_type(llm=llm_locale, chain_type="stuff", retriever=faiss_vs.as_retriever())
+            qa_faiss = RetrievalQA.from_chain_type(llm=llm_locale, chain_type="stuff", retriever=qa_vectorstore.as_retriever())
             result = qa_faiss.invoke({"query": query})
             print(result)
 
         case _:
-            pass
+            print("Default")
 
+
+    return qa_vectorstore
+
+
+def run_chatllm(rag_setup:int, query:str, chat_history: List[Dict[str,Any]]=[])  -> Any:
+
+    qa_chain = None
+
+    match rag_setup:
+        case 1:
+            embeddings = OpenAIEmbeddings()
+
+            qa_vectorstore = Pinecone.from_existing_index(
+                index_name=INDEX_NAME, embedding=embeddings
+            )
+
+            chat = ChatOpenAI(temperature=0, verbose=True)
+
+            # qa_chain = RetrievalQA.from_chain_type(
+            #     llm=chat,
+            #     chain_type="stuff",
+            #     retriever=qa_vectorstore.as_retriever(),
+            #     return_source_documents=True,
+            # )
+
+            qa_chain = ConversationalRetrievalChain.from_llm(
+                llm=chat,
+                chain_type="stuff",
+                retriever=qa_vectorstore.as_retriever(),
+                return_source_documents=True,
+                callbacks=[handler],
+                verbose=True
+            )
+
+        case 2:
+            embeddings_local = OllamaEmbeddings()
+
+            persist_directory = "./vectorestore/chroma_db"
+            qa_vectorstore= Chroma(persist_directory=persist_directory, embedding_function=embeddings_local)
+
+            chatllm_locale = ChatOllama(verbose=True, temperature=0, model="llama2")
+
+            # qa_chain = RetrievalQA.from_chain_type(
+            #     llm=chatllm_locale, chain_type="stuff", retriever=qa_vectorstore.as_retriever(), return_source_documents=True
+            # )
+
+            qa_chain = ConversationalRetrievalChain.from_llm(
+                llm=chatllm_locale, chain_type="stuff", retriever=qa_vectorstore.as_retriever(), return_source_documents=True
+            )
+
+
+        case 3:
+            embeddings_local = OllamaEmbeddings()
+
+            qa_vectorstore = FAISS.load_local(folder_path="./faiss_index_react", embeddings = embeddings_local, index_name= "index")
+            print("FAISS DB loaded!")
+
+            chatllm_locale = ChatOllama(verbose=True, temperature=0, model="phi")
+
+            query="Give me the gist of React in 3 sentences"
+            
+            qa_chain = ConversationalRetrievalChain.from_llm(llm=chatllm_locale, chain_type="stuff", retriever=qa_vectorstore.as_retriever(), return_source_documents=True)
+
+        case _:
+            print("Default")
+
+
+    print("=================")
+    print(chat_history)
+    print("=================")
+    return qa_chain.invoke({"question": query, "chat_history": chat_history })
 
 
 if __name__ == "__main__":
 
     print("Hello VectoreStore!")
 
-    online_react_pinecone = True
+    online_react_pinecone = False
     offline_react_chroma = False
-    offline_react_faiss = False
+    offline_react_faiss = True
+
+    query_test = "What is a vector DB? Give me a 15 word answer for a beginner"
+    # qa_chain = run_chatllm(2, query_test)
 
     if online_react_pinecone:
         ingest_docs(1,"langchain-index")

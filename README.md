@@ -59,7 +59,10 @@ python main.py
 python ingestion.py
 ```
 
-
+Run the the app streamlit
+```bash
+pipenv run streamlit run myApp.py
+```
 
 ### Download Web page resources
 
