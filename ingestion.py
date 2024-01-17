@@ -1,5 +1,5 @@
 import os
-from typing import Any
+from typing import Any, Dict, List
 
 from langchain_community.document_loaders import TextLoader
 from langchain_community.document_loaders import PyPDFLoader
@@ -9,18 +9,30 @@ from langchain.text_splitter import CharacterTextSplitter
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 from langchain_openai.llms import OpenAI
+from langchain_openai.chat_models import ChatOpenAI
 from langchain_community.llms import Ollama
+from langchain_community.chat_models import ChatOllama
 from langchain_openai.embeddings import OpenAIEmbeddings
 from langchain_community.embeddings import OllamaEmbeddings
-from langchain_community.chat_models import ChatOpenAI
-from langchain_community.chat_models import ChatOllama
+
 
 from langchain_community.vectorstores import Pinecone
 from langchain_community.vectorstores import milvus
 from langchain_community.vectorstores import Chroma
 from langchain_community.vectorstores import FAISS
 from langchain.chains import RetrievalQA
+from langchain.chains import ConversationalRetrievalChain
 from common.consts import INDEX_NAME
+
+from backend.callbacks import AgentCallbackHandler
+from langchain.callbacks import FileCallbackHandler
+from langchain.callbacks.base import BaseCallbackManager
+from loguru import logger
+
+logfile = "./logs/output.log"
+logger.add(logfile, colorize=True, enqueue=True)
+handler = FileCallbackHandler(logfile)
+callback_manager = BaseCallbackManager([handler])
 
 import pinecone
 import chromadb
@@ -211,7 +223,7 @@ def ingest_docs(ingest_setup:int, index_name:str) -> Any:
     return qa_vectorstore
 
 
-def run_chatllm(rag_setup:int, query:str)  -> Any:
+def run_chatllm(rag_setup:int, query:str, chat_history: List[Dict[str,Any]]=[])  -> Any:
 
     qa_chain = None
 
@@ -223,13 +235,22 @@ def run_chatllm(rag_setup:int, query:str)  -> Any:
                 index_name=INDEX_NAME, embedding=embeddings
             )
 
-            chat = ChatOpenAI(verbose=True, temperature=0)
+            chat = ChatOpenAI(temperature=0, verbose=True)
 
-            qa_chain = RetrievalQA.from_chain_type(
+            # qa_chain = RetrievalQA.from_chain_type(
+            #     llm=chat,
+            #     chain_type="stuff",
+            #     retriever=qa_vectorstore.as_retriever(),
+            #     return_source_documents=True,
+            # )
+
+            qa_chain = ConversationalRetrievalChain.from_llm(
                 llm=chat,
                 chain_type="stuff",
                 retriever=qa_vectorstore.as_retriever(),
                 return_source_documents=True,
+                callbacks=[handler],
+                verbose=True
             )
 
         case 2:
@@ -240,7 +261,11 @@ def run_chatllm(rag_setup:int, query:str)  -> Any:
 
             chatllm_locale = ChatOllama(verbose=True, temperature=0, model="llama2")
 
-            qa_chain = RetrievalQA.from_chain_type(
+            # qa_chain = RetrievalQA.from_chain_type(
+            #     llm=chatllm_locale, chain_type="stuff", retriever=qa_vectorstore.as_retriever(), return_source_documents=True
+            # )
+
+            qa_chain = ConversationalRetrievalChain.from_llm(
                 llm=chatllm_locale, chain_type="stuff", retriever=qa_vectorstore.as_retriever(), return_source_documents=True
             )
 
@@ -255,13 +280,16 @@ def run_chatllm(rag_setup:int, query:str)  -> Any:
 
             query="Give me the gist of React in 3 sentences"
             
-            qa_chain = RetrievalQA.from_chain_type(llm=chatllm_locale, chain_type="stuff", retriever=qa_vectorstore.as_retriever(), return_source_documents=True)
+            qa_chain = ConversationalRetrievalChain.from_llm(llm=chatllm_locale, chain_type="stuff", retriever=qa_vectorstore.as_retriever(), return_source_documents=True)
 
         case _:
             print("Default")
 
 
-    return qa_chain.invoke({"query": query})
+    print("=================")
+    print(chat_history)
+    print("=================")
+    return qa_chain.invoke({"question": query, "chat_history": chat_history })
 
 
 if __name__ == "__main__":
@@ -269,11 +297,11 @@ if __name__ == "__main__":
     print("Hello VectoreStore!")
 
     online_react_pinecone = False
-    offline_react_chroma = True
-    offline_react_faiss = False
+    offline_react_chroma = False
+    offline_react_faiss = True
 
     query_test = "What is a vector DB? Give me a 15 word answer for a beginner"
-    qa_chain = run_chatllm(2, query_test)
+    # qa_chain = run_chatllm(2, query_test)
 
     if online_react_pinecone:
         ingest_docs(1,"langchain-index")
