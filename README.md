@@ -49,14 +49,17 @@ pip list | grep  'langchain'
 pipenv graph | grep langchain
 ```
 
-```bash
+```bash 
 pipenv run python main.py
 pipenv run python ingestion.py
+pipenv run python ./backend/agents.py
 ```
 
 ```bash
 python main.py
 python ingestion.py
+python ingestion.py
+python ./backend/agents.py
 ```
 
 Run the the app streamlit

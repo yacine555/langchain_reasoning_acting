@@ -38,7 +38,6 @@ import pinecone
 import chromadb
 
 
-
 def ingest_docs(ingest_setup:int, index_name:str) -> Any:
     """
     ingest_setup: type of setup to implement React: the embeding, llm and vector database
