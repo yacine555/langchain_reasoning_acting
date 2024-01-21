@@ -72,3 +72,18 @@ pipenv run streamlit run myApp.py
 ```
 wget -mpEk https://python.langchain.com/docs/get_started
 ```
+
+
+### Debug Logging
+
+The application is using Pezzo.ai and wandb
+
+#### Pezzo.ai
+
+#### Wanbd
+
+login to wandb
+
+```
+wandb login
+```
