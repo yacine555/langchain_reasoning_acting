@@ -8,10 +8,6 @@ from langchain_community.document_loaders import DocusaurusLoader
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
-from langchain_openai.llms import OpenAI
-from langchain_openai.chat_models import ChatOpenAI
-from langchain_community.llms import Ollama
-from langchain_community.chat_models import ChatOllama
 from langchain_openai.embeddings import OpenAIEmbeddings
 from langchain_community.embeddings import OllamaEmbeddings
 
@@ -22,12 +18,21 @@ from langchain_community.vectorstores import Chroma
 from langchain_community.vectorstores import FAISS
 from langchain.chains import RetrievalQA
 from langchain.chains import ConversationalRetrievalChain
+
 from common.consts import INDEX_NAME
+from backend.llm import get_llm, get_chatllm
 
 from backend.callbacks import AgentCallbackHandler
 from langchain.callbacks import FileCallbackHandler
 from langchain.callbacks.base import BaseCallbackManager
+from langchain_community.callbacks import wandb_tracing_enabled
+
+
 from loguru import logger
+
+os.environ["LANGCHAIN_WANDB_TRACING"] = "true"
+os.environ["WANDB_PROJECT"] = "testwandb"
+
 
 logfile = "./logs/output.log"
 logger.add(logfile, colorize=True, enqueue=True)
@@ -92,8 +97,9 @@ def ingest_docs(ingest_setup:int, index_name:str) -> Any:
                 )
 
 
+            llm = get_llm(1,"gpt-4",0)
             qa_pinecone = RetrievalQA.from_chain_type(
-                llm=OpenAI(), chain_type="stuff", retriever=qa_vectorstore.as_retriever()
+                llm=llm, chain_type="stuff", retriever=qa_vectorstore.as_retriever()
             )
 
             query = "What is a vector DB? Give me a 15 word answer for a beginner"
@@ -133,7 +139,8 @@ def ingest_docs(ingest_setup:int, index_name:str) -> Any:
                 qa_vectorstore = Chroma(persist_directory=persist_directory, embedding_function=embeddings_local)
                 print("Chroma DB loaded!")
 
-            llm_locale = Ollama(model="llama2")
+            llm_locale = get_llm(2,"llama2",0)
+
 
             qa_chrome = RetrievalQA.from_chain_type(
                 llm=llm_locale, chain_type="stuff", retriever=qa_vectorstore.as_retriever()
@@ -207,7 +214,7 @@ def ingest_docs(ingest_setup:int, index_name:str) -> Any:
                 qa_vectorstore = FAISS.load_local(folder_path=faiss_path, embeddings = embeddings_local, index_name= "index")
                 print("FAISS DB loaded!")
 
-            llm_locale = Ollama(model="phi")
+            llm_locale = get_llm(2,"phi",0)
 
             query="Give me the gist of React in 3 sentences"
             
@@ -228,13 +235,15 @@ def run_chatllm(rag_setup:int, query:str, chat_history: List[Dict[str,Any]]=[]) 
 
     match rag_setup:
         case 1:
+            print("Rag Pinecone!")
+
             embeddings = OpenAIEmbeddings()
 
             qa_vectorstore = Pinecone.from_existing_index(
                 index_name=INDEX_NAME, embedding=embeddings
             )
 
-            chat = ChatOpenAI(temperature=0, verbose=True)
+            chat = get_chatllm(1,"gpt-3.5-turbo",0,True, penzzo_log=True)
 
             # qa_chain = RetrievalQA.from_chain_type(
             #     llm=chat,
@@ -258,7 +267,7 @@ def run_chatllm(rag_setup:int, query:str, chat_history: List[Dict[str,Any]]=[]) 
             persist_directory = "./vectorestore/chroma_db"
             qa_vectorstore= Chroma(persist_directory=persist_directory, embedding_function=embeddings_local)
 
-            chatllm_locale = ChatOllama(verbose=True, temperature=0, model="llama2")
+            chatllm_locale = chat = get_chatllm(2,"llama2",0,True, penzzo_log=True)
 
             # qa_chain = RetrievalQA.from_chain_type(
             #     llm=chatllm_locale, chain_type="stuff", retriever=qa_vectorstore.as_retriever(), return_source_documents=True
@@ -275,7 +284,7 @@ def run_chatllm(rag_setup:int, query:str, chat_history: List[Dict[str,Any]]=[]) 
             qa_vectorstore = FAISS.load_local(folder_path="./faiss_index_react", embeddings = embeddings_local, index_name= "index")
             print("FAISS DB loaded!")
 
-            chatllm_locale = ChatOllama(verbose=True, temperature=0, model="phi")
+            chatllm_locale = get_chatllm(2,"phi",0,True)
 
             query="Give me the gist of React in 3 sentences"
             
@@ -297,10 +306,10 @@ if __name__ == "__main__":
 
     online_react_pinecone = False
     offline_react_chroma = False
-    offline_react_faiss = True
+    offline_react_faiss = False
 
     query_test = "What is a vector DB? Give me a 15 word answer for a beginner"
-    # qa_chain = run_chatllm(2, query_test)
+    qa_chain = run_chatllm(1, query_test)
 
     if online_react_pinecone:
         ingest_docs(1,"langchain-index")

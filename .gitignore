@@ -165,3 +165,4 @@ docs/faiss_index_react
 *.DS_Store
 docs/*
 vectorestore/*
+wandb/*
