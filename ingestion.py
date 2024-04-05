@@ -5,12 +5,15 @@ from langchain_community.document_loaders import TextLoader
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.document_loaders import ReadTheDocsLoader
 from langchain_community.document_loaders import DocusaurusLoader
+from langchain_community.document_loaders import WebBaseLoader
+
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 from langchain_openai.embeddings import OpenAIEmbeddings
 from langchain_community.embeddings import OllamaEmbeddings
 
+from langchain_core.prompts import ChatPromptTemplate
 
 from langchain_community.vectorstores import Pinecone
 from langchain_community.vectorstores import milvus
@@ -18,6 +21,8 @@ from langchain_community.vectorstores import Chroma
 from langchain_community.vectorstores import FAISS
 from langchain.chains import RetrievalQA
 from langchain.chains import ConversationalRetrievalChain
+from langchain.chains import create_retrieval_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain
 
 from common.consts import INDEX_NAME
 from backend.llm import get_llm, get_chatllm
@@ -30,7 +35,7 @@ from langchain_community.callbacks import wandb_tracing_enabled
 
 from loguru import logger
 
-os.environ["LANGCHAIN_WANDB_TRACING"] = "true"
+os.environ["LANGCHAIN_WANDB_TRACING"] = "false"
 os.environ["WANDB_PROJECT"] = "testwandb"
 
 
@@ -45,10 +50,11 @@ import chromadb
 
 def ingest_docs(ingest_setup:int, index_name:str) -> Any:
     """
-    ingest_setup: type of setup to implement React: the embeding, llm and vector database
+    ingest_setup: Setup to implement ReAct algorithm using LLM, embedings and vector database
         1: OpenAI with Pinecone with text
-        2: Ollama llama2 with Chroma with PDF
-        3: Ollama Phi with Faiss with site readTheDocs
+        2: Ollama llama2 with ChromaDb with PDF
+        3: Ollama Phi with Faiss with site using readTheDocs format
+        4: Ollama llama2 with Faiss loading a website (Langchain Quickstart demo)
 
     index_name: name of the index for the vectore store 
     """
@@ -60,7 +66,6 @@ def ingest_docs(ingest_setup:int, index_name:str) -> Any:
             print("Setting up Pinecone VectoreStore!")
 
             embeddings = OpenAIEmbeddings()
-            pinecone_vs = None
 
             pinecone.init()
             index_list = pinecone.list_indexes()
@@ -159,8 +164,6 @@ def ingest_docs(ingest_setup:int, index_name:str) -> Any:
             print("Setting up FAISS VectoreStore!")
 
             embeddings_local = OllamaEmbeddings()
-            faiss_vs = None
-
             faiss_path= "./vectorestore/faiss"
 
             if not os.path.exists(faiss_path):
@@ -221,6 +224,70 @@ def ingest_docs(ingest_setup:int, index_name:str) -> Any:
             qa_faiss = RetrievalQA.from_chain_type(llm=llm_locale, chain_type="stuff", retriever=qa_vectorstore.as_retriever())
             result = qa_faiss.invoke({"query": query})
             print(result)
+
+        case 4: # https://python.langchain.com/docs/get_started/quickstart/#retrieval-chain
+            print("Setting up FAISS VectoreStore!")
+
+            embeddings_local = OllamaEmbeddings()
+            faiss_path= "./vectorestore/faiss_4"
+
+            if not os.path.exists(faiss_path):
+
+                print("Loading documents into FAISS DB...")
+
+                web_path = "https://docs.smith.langchain.com/user_guide"
+
+                loader = WebBaseLoader(web_path)
+                documents_raw = loader.load()    
+
+                print(f"Loaded {len(documents_raw)} documents")
+
+                text_splitter = RecursiveCharacterTextSplitter()
+                raw_chunks = text_splitter.split_documents(documents_raw)
+
+                print(f"Splitted into {len(raw_chunks)} chunks")
+
+                qa_vectorstore = FAISS.from_documents(
+                    documents=raw_chunks,
+                    embedding=embeddings_local
+                )
+
+                qa_vectorstore.save_local(faiss_path)
+
+
+                prompt = ChatPromptTemplate.from_template("""Answer the following question based only on the provided context:
+
+                    <context>
+                    {context}
+                    </context>
+
+                    Question: {input}""")
+                
+                llm_locale = get_llm(2,"llama2",0)
+
+                document_chain = create_stuff_documents_chain(llm_locale, prompt)
+
+                retriever = qa_vectorstore.as_retriever()
+                retrieval_chain = create_retrieval_chain(retriever, document_chain)
+
+                response = retrieval_chain.invoke({"input": "how can langsmith help with testing?"})
+
+                print(response["answer"])
+
+            else:
+                qa_vectorstore = FAISS.load_local(folder_path=faiss_path, embeddings = embeddings_local, index_name= "index", allow_dangerous_deserialization=True)
+                print("FAISS DB loaded!")
+
+            llm_locale = get_llm(2,"llama2",0)
+
+            query="Give me the gist of React in 3 sentences"
+
+            qa_faiss = RetrievalQA.from_chain_type(llm=llm_locale, chain_type="stuff", retriever=qa_vectorstore.as_retriever())
+            result = qa_faiss.invoke({"query": query})
+            print(result)
+
+                    
+
 
         case _:
             print("Default")
@@ -307,9 +374,10 @@ if __name__ == "__main__":
     online_react_pinecone = False
     offline_react_chroma = False
     offline_react_faiss = False
+    offline_react_faiss4 = True
 
     query_test = "What is a vector DB? Give me a 15 word answer for a beginner"
-    qa_chain = run_chatllm(1, query_test)
+    #qa_chain = run_chatllm(1, query_test)
 
     if online_react_pinecone:
         ingest_docs(1,"langchain-index")
@@ -319,6 +387,9 @@ if __name__ == "__main__":
 
     if offline_react_faiss:
         ingest_docs(3,"faiss_index_react")
+
+    if offline_react_faiss4:
+        ingest_docs(4,"faiss_index_react")
        
 
 

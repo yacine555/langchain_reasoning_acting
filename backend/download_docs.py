@@ -2,7 +2,11 @@ import requests
 from bs4 import BeautifulSoup
 import os
 import urllib
- 
+
+"""
+Script that Download a Docsting website into the local folder
+"""
+
 # The URL to scrape
 url = "https://python.langchain.com/docs/get_started"
  
