@@ -1,4 +1,4 @@
-# lanngchain_reasoning_acting
+# langchain_reasoning_acting
 
 ## Description
 
@@ -9,26 +9,30 @@ based on ReAct paper [link](https://arxiv.org/abs/2210.03629)
 ### Prerequisites and Dependencies
 
 Before you begin, ensure you have the following installed:
-- Python 3.10.10 or later. Note that this was only tested on 3.10.10
+- Python 3.11.x or later. Note that this was only tested on 3.11.8
 - [Pipenv](https://pipenv.pypa.io/en/latest/) 
 
 
+```bash
+python --version
+pipenv --version
+```
+
 Here are the PIP modules used:
 
-- [**python-dotenv (1.0.0)**](https://pypi.org/project/python-dotenv/1.0.0/): Reads key-value pairs from a `.env` file and 
+- [**python-dotenv**](https://pypi.org/project/python-dotenv/): Reads key-value pairs from a `.env` file and 
 - [**tiktoken**](https://pypi.org/project/tiktoken/): tiktoken is a fast BPE (Byte pair encoding) tokeniser for use with OpenAI's models.
 - [**Ollama**](https://ollama.ai/) for local LLMs
+- see requirments.txt list
+
 
 ### Installation
-
 
 Recommend using Install pipenv or other vitual environment tool. 
 
 ```bash
 pipenv install
 pipenv shell
-pipenv --version
-python --version
 ```
 
 
@@ -37,12 +41,16 @@ Clone the repository and install the required packages:
 ```bash
 git clone https://github.com/yacine555/langchain_reasoning_acting.git
 cd langchain_reasoning_acting
-pipenv install -r requirements.txt
+pip install -r requirements.txt
 ```
 
-pipenv run pip install -r requirements.txt
+outside of the virtual environment you can run:
 
-to check the Lanchaing package:
+```bash
+pipenv run pip install -r requirements.txt
+```
+
+To check the Lanchain packages installed:
 
 ```
 pip list | grep  'langchain'
@@ -76,9 +84,15 @@ wget -mpEk https://python.langchain.com/docs/get_started
 
 ### Debug Logging
 
-The application is using Pezzo.ai and wandb
+The application is using Langsmith, Pezzo.ai and wandb to test the LLM application
+
+#### Langsmith
+
+[Go to LangSmith](https://smith.langchain.com)
 
 #### Pezzo.ai
+
+[Go to Pezzo](https://app.pezzo.ai/)
 
 #### Wanbd
 

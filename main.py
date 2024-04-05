@@ -3,8 +3,10 @@ from dotenv import load_dotenv
 from langchain.agents import tool
 from langchain.agents.format_scratchpad import format_log_to_str
 from langchain.agents.output_parsers import ReActSingleInputOutputParser
-from langchain.chat_models import ChatOpenAI
+from langchain_openai import ChatOpenAI
 from langchain.prompts import PromptTemplate
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
 from langchain.schema import AgentAction, AgentFinish
 from langchain.tools import Tool
 from langchain.tools.render import render_text_description
@@ -13,9 +15,8 @@ from backend.callbacks import AgentCallbackHandler
 
 load_dotenv()
 
-
 @tool
-def get_text_lenght(text: str) -> int:
+def get_text_length(text: str) -> int:
     """Returns the lenght of the text in number of characters"""
     print(f"get_text_length enter with {text=}")
     return len(text)
@@ -30,12 +31,31 @@ def find_tool_by_name(tools: List[Tool], tool_name: str) -> Tool:
 
 if __name__ == "__main__":
     print("Hello Langchain RAG")
-    print(get_text_lenght("Dog"))
+    print(get_text_length("Dog"))
 
-    tools = [get_text_lenght]
+    tools = [get_text_length]
+
+    llm = ChatOpenAI(
+        temperature=0, model_kwargs={"stop":"\nObservation"}, callbacks=[AgentCallbackHandler()]
+    )
+
+    # test 1: invoke llm 
+    #llm.invoke("how can langsmith help with testing?")
+
+    # test 2: create a chain with a prompt
+    prompt2 = ChatPromptTemplate.from_messages([
+        ("system", "You are world class technical documentation writer."),
+        ("user", "{input}")
+    ])
+
+    output_parser = StrOutputParser()
+
+    chain = prompt2 | llm | output_parser
+    chain.invoke({"input": "how can langsmith help with testing?"})
 
     template = """
-    Answer the following questions as best you can. You have access to the following tools:
+    Answer the following questions as best you can. You have access to the following tooclear
+    ls:
 
     {tools}
     
@@ -61,9 +81,6 @@ if __name__ == "__main__":
         tool_names=", ".join([t.name for t in tools]),
     )
 
-    llm = ChatOpenAI(
-        temperature=0, stop=["\nObservation"], callbacks=[AgentCallbackHandler()]
-    )
 
     intermediate_steps = []
     agent = (
