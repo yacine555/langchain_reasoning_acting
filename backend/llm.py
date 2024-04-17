@@ -26,8 +26,8 @@ def get_llm(type:int, model_name:str, temperature=0, verbose=False,**kwargs) -> 
                 2 - Local Ollama
                 3 - Claude - model name "claude-3-sonnet-20240229" 
         model_name: name of the moodel to use
-
     """
+    
     llm = None
 
     match type:

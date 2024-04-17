@@ -11,6 +11,12 @@ from langchain.schema import AgentAction, AgentFinish
 from langchain.tools import Tool
 from langchain.tools.render import render_text_description
 
+from langchain.chains import create_retrieval_chain
+
+
+from backend.llm import get_llm, get_chatllm
+from common.template import TEMPLATE_TOOLS
+
 from backend.callbacks import AgentCallbackHandler
 
 load_dotenv()
@@ -29,20 +35,27 @@ def find_tool_by_name(tools: List[Tool], tool_name: str) -> Tool:
     raise ValueError(f"Tool wtih name {tool_name} not found")
 
 
+
+
 if __name__ == "__main__":
     print("Hello Langchain RAG")
     print(get_text_length("Dog"))
 
     tools = [get_text_length]
 
+    
+    
+    # Quick start, create a basic chain with prompt, and parser
     llm = ChatOpenAI(
         temperature=0, model_kwargs={"stop":"\nObservation"}, callbacks=[AgentCallbackHandler()]
     )
 
-    # test 1: invoke llm 
+    # Usecase 1: invoke llm with raw user input
     #llm.invoke("how can langsmith help with testing?")
 
-    # test 2: create a chain with a prompt
+    llm = get_llm(1,"gpt-4",0)
+
+    # Usecase 2: create a chain with a chat prompt template
     prompt2 = ChatPromptTemplate.from_messages([
         ("system", "You are world class technical documentation writer."),
         ("user", "{input}")
@@ -53,30 +66,15 @@ if __name__ == "__main__":
     chain = prompt2 | llm | output_parser
     chain.invoke({"input": "how can langsmith help with testing?"})
 
-    template = """
-    Answer the following questions as best you can. You have access to the following tooclear
-    ls:
 
-    {tools}
-    
-    Use the following format:
-    
-    Question: the input question you must answer
-    Thought: you should always think about what to do
-    Action: the action to take, should be one of [{tool_names}]
-    Action Input: the input to the action
-    Observation: the result of the action
-    ... (this Thought/Action/Action Input/Observation can repeat N times)
-    Thought: I now know the final answer
-    Final Answer: the final answer to the original input question
-    
-    Begin!
-    
-    Question: {input}
-    Thought: {agent_scratchpad}
-    """
 
-    prompt = PromptTemplate.from_template(template=template).partial(
+    web_url = "https://docs.smith.langchain.com/user_guide"
+    input_question = "how can langsmith help with testing?"
+
+
+
+
+    prompt = PromptTemplate.from_template(template=TEMPLATE_TOOLS).partial(
         tools=render_text_description(tools),
         tool_names=", ".join([t.name for t in tools]),
     )

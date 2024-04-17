@@ -43,6 +43,10 @@ git clone https://github.com/yacine555/langchain_reasoning_acting.git
 cd langchain_reasoning_acting
 pip install -r requirements.txt
 ```
+Check outdated packages:
+
+
+
 
 outside of the virtual environment you can run:
 
@@ -57,18 +61,24 @@ pip list | grep  'langchain'
 pipenv graph | grep langchain
 ```
 
+```bash
+pip list --outdated
+```
+
+
+```bash
+python main.py
+python ingestion.py
+python ./backend/agents.py
+```
+
+
 ```bash 
 pipenv run python main.py
 pipenv run python ingestion.py
 pipenv run python ./backend/agents.py
 ```
 
-```bash
-python main.py
-python ingestion.py
-python ingestion.py
-python ./backend/agents.py
-```
 
 Run the the app streamlit
 ```bash
