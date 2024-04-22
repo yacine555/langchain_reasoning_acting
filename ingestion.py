@@ -273,12 +273,12 @@ def vs_setup_faiss(raw_chunks:List[Document],indexname:str) -> FAISS:
     return faiss_vectorstore
 
 
-def create_retrieval_chain(web_url:str, input_question:str)->Any:
+def build_retrieval_chain(web_url:str, input_question:str)->Any:
 
     raw_chunks = ingest_Webdocs(web_url)
     vectore_store = vs_setup_faiss(raw_chunks,"testqs")
 
-    llm= get_llm(2, "llama2", 0)
+    llm= get_llm(2, "llama3", 0)
 
     prompt = ChatPromptTemplate.from_template(TEMPLATE_CONTEXT)
     document_chain = create_stuff_documents_chain(llm, prompt)
@@ -368,7 +368,7 @@ if __name__ == "__main__":
     online_react_pinecone = False
     offline_react_chroma = False
     offline_react_faiss = False
-    offline_react_other = True
+    local_react_faiss_Ollama = True
 
     query_test = "What is a vector DB? Give me a 15 word answer for a beginner"
     #qa_chain = run_chatllm(1, query_test)
@@ -382,30 +382,14 @@ if __name__ == "__main__":
     if offline_react_faiss:
         ingest_docs(3,"faiss_index_react")
 
-    # ingest web into faiss + lama2 + and localembedding 
-    if offline_react_other:
+    # ingest web into faiss + Ollama + and localembedding 
+    if local_react_faiss_Ollama:
 
         web_url = 'https://docs.smith.langchain.com/user_guide'
         input_question = "how can langsmith help with testing?"
 
-        raw_chunks = ingest_Webdocs(web_url)
-        vectore_store = vs_setup_faiss(raw_chunks,"testqs")
-        llm = get_llm(2, "llama2", 0)
-
-        prompt = ChatPromptTemplate.from_template(TEMPLATE_CONTEXT)
-        document_chain = create_stuff_documents_chain(llm, prompt)
-
-        qa_chain = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff", retriever=vectore_store.as_retriever())
-        result = qa_chain.invoke({"query": input_question})
-        print(result)
-
-        # retriever = vectore_store.as_retriever()
-        # retrieval_chain = create_retrieval_chain(retriever, document_chain)
-
-        #response = retrieval_chain.invoke({"input":input_question })
-
-        # response = create_retrieval_chain(web_url, input_question)
-        # print(response["answer"])
+        response = build_retrieval_chain(web_url, input_question)
+        print(response["answer"])
 
     
 

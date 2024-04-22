@@ -68,8 +68,6 @@ if __name__ == "__main__":
 
 
 
-    web_url = "https://docs.smith.langchain.com/user_guide"
-    input_question = "how can langsmith help with testing?"
 
 
 
