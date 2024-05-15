@@ -13,18 +13,26 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai.embeddings import OpenAIEmbeddings
 from langchain_community.embeddings import OllamaEmbeddings
 
+from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.vectorstores import VectorStoreRetriever
+from langchain_core.language_models.llms import BaseLLM
 
 from langchain_community.vectorstores import Pinecone
 from langchain_community.vectorstores import milvus
 from langchain_community.vectorstores import Chroma
 from langchain_community.vectorstores import FAISS
+
 from langchain.chains import RetrievalQA
 from langchain.chains import ConversationalRetrievalChain
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain.chains import create_history_aware_retriever
+from langchain_core.prompts import MessagesPlaceholder
 
 from common.consts import INDEX_NAME
+from common.template import TEMPLATE_CONTEXT
 from backend.llm import get_llm, get_chatllm
 
 from backend.callbacks import AgentCallbackHandler
@@ -225,75 +233,101 @@ def ingest_docs(ingest_setup:int, index_name:str) -> Any:
             result = qa_faiss.invoke({"query": query})
             print(result)
 
-        case 4: # https://python.langchain.com/docs/get_started/quickstart/#retrieval-chain
-            print("Setting up FAISS VectoreStore!")
-
-            embeddings_local = OllamaEmbeddings()
-            faiss_path= "./vectorestore/faiss_4"
-
-            if not os.path.exists(faiss_path):
-
-                print("Loading documents into FAISS DB...")
-
-                web_path = "https://docs.smith.langchain.com/user_guide"
-
-                loader = WebBaseLoader(web_path)
-                documents_raw = loader.load()    
-
-                print(f"Loaded {len(documents_raw)} documents")
-
-                text_splitter = RecursiveCharacterTextSplitter()
-                raw_chunks = text_splitter.split_documents(documents_raw)
-
-                print(f"Splitted into {len(raw_chunks)} chunks")
-
-                qa_vectorstore = FAISS.from_documents(
-                    documents=raw_chunks,
-                    embedding=embeddings_local
-                )
-
-                qa_vectorstore.save_local(faiss_path)
-
-
-                prompt = ChatPromptTemplate.from_template("""Answer the following question based only on the provided context:
-
-                    <context>
-                    {context}
-                    </context>
-
-                    Question: {input}""")
-                
-                llm_locale = get_llm(2,"llama2",0)
-
-                document_chain = create_stuff_documents_chain(llm_locale, prompt)
-
-                retriever = qa_vectorstore.as_retriever()
-                retrieval_chain = create_retrieval_chain(retriever, document_chain)
-
-                response = retrieval_chain.invoke({"input": "how can langsmith help with testing?"})
-
-                print(response["answer"])
-
-            else:
-                qa_vectorstore = FAISS.load_local(folder_path=faiss_path, embeddings = embeddings_local, index_name= "index", allow_dangerous_deserialization=True)
-                print("FAISS DB loaded!")
-
-            llm_locale = get_llm(2,"llama2",0)
-
-            query="Give me the gist of React in 3 sentences"
-
-            qa_faiss = RetrievalQA.from_chain_type(llm=llm_locale, chain_type="stuff", retriever=qa_vectorstore.as_retriever())
-            result = qa_faiss.invoke({"query": query})
-            print(result)
-
-                    
-
 
         case _:
             print("Default")
 
 
     return qa_vectorstore
+
+
+
+def ingest_Webdocs(web_url:str) -> List[Document]:
+
+    #loader = WebBaseLoader(web_url)
+    loader = WebBaseLoader("https://docs.smith.langchain.com/user_guide")
+
+    documents_raw = loader.load()
+    
+    print(f"Loaded {len(documents_raw)} documents")
+
+    text_splitter = RecursiveCharacterTextSplitter()
+    raw_chunks = text_splitter.split_documents(documents_raw)
+
+    print(f"Splitted into {len(raw_chunks)} chunks")
+
+    return raw_chunks
+
+
+def vs_setup_faiss(raw_chunks:List[Document],indexname:str) -> FAISS:
+
+    faiss_path= "./vectorestore/faiss_" + indexname
+    embeddings_local = OllamaEmbeddings()
+
+    if not os.path.exists(faiss_path):
+        faiss_vectorstore = FAISS.from_documents(
+                documents=raw_chunks,
+                embedding=embeddings_local
+            )
+
+        faiss_vectorstore.save_local(faiss_path)
+
+    else:
+        faiss_vectorstore = FAISS.load_local(folder_path=faiss_path, embeddings = embeddings_local, index_name="index", allow_dangerous_deserialization=True)
+        print("FAISS DB loaded in index: " + indexname)
+
+    return faiss_vectorstore
+
+
+def build_retrieval_chain(input_question:str, retriever: VectorStoreRetriever,llm:BaseLLM)->Any:
+
+
+    prompt = ChatPromptTemplate.from_template(TEMPLATE_CONTEXT)
+    document_chain = create_stuff_documents_chain(llm, prompt)
+
+    
+    retrieval_chain = create_retrieval_chain(retriever, document_chain)
+
+    response = retrieval_chain.invoke({"input":input_question })
+
+    return response
+
+
+def build_conversation_retrieval_chain(input_question:str,retriever: VectorStoreRetriever, llm:BaseLLM)->Any:
+
+
+    prompt = ChatPromptTemplate.from_messages([
+    MessagesPlaceholder(variable_name="chat_history"),
+        ("user", "{input}"),
+        ("user", "Given the above conversation, generate a search query to look up to get information relevant to the conversation")
+    ])
+    retriever_chain = create_history_aware_retriever(llm, retriever, prompt)
+
+    chat_history = [HumanMessage(content="Can LangSmith help test my LLM applications?"), AIMessage(content="Yes!")]
+    response = retriever_chain.invoke({
+        "chat_history": chat_history,
+        "input": "Tell me how"
+    })
+
+    print(response)
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", "Answer the user's questions based on the below context:\n\n{context}"),
+        MessagesPlaceholder(variable_name="chat_history"),
+        ("user", "{input}"),
+    ])
+    document_chain = create_stuff_documents_chain(llm, prompt)
+
+    retrieval_chain = create_retrieval_chain(retriever_chain, document_chain)
+
+    chat_history = [HumanMessage(content="Can LangSmith help test my LLM applications?"), AIMessage(content="Yes!")]
+    response = retrieval_chain.invoke({
+        "chat_history": chat_history,
+        "input": "Tell me how"
+    })
+    print(response)
+
+    return response
 
 
 def run_chatllm(rag_setup:int, query:str, chat_history: List[Dict[str,Any]]=[])  -> Any:
@@ -374,7 +408,7 @@ if __name__ == "__main__":
     online_react_pinecone = False
     offline_react_chroma = False
     offline_react_faiss = False
-    offline_react_faiss4 = True
+    local_react_faiss_Ollama = True
 
     query_test = "What is a vector DB? Give me a 15 word answer for a beginner"
     #qa_chain = run_chatllm(1, query_test)
@@ -388,11 +422,19 @@ if __name__ == "__main__":
     if offline_react_faiss:
         ingest_docs(3,"faiss_index_react")
 
-    if offline_react_faiss4:
-        ingest_docs(4,"faiss_index_react")
-       
+    # ingest web into faiss + Ollama + and localembedding 
+    if local_react_faiss_Ollama:
 
+        web_url = 'https://docs.smith.langchain.com/user_guide'
+        input_question = "how can langsmith help with testing?"
 
-    
+        llm= get_llm(2, "llama3", 0)
+        
+        raw_chunks = ingest_Webdocs(web_url)
+        vectore_store = vs_setup_faiss(raw_chunks,"Langsmithqs")
+        retriever = vectore_store.as_retriever()
 
-    
+        # response = build_retrieval_chain(input_question,retriever,llm)
+        # print(response["answer"])
+
+        response = build_conversation_retrieval_chain(input_question,retriever,llm)
