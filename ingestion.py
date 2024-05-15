@@ -15,15 +15,21 @@ from langchain_community.embeddings import OllamaEmbeddings
 
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.vectorstores import VectorStoreRetriever
+from langchain_core.language_models.llms import BaseLLM
 
 from langchain_community.vectorstores import Pinecone
 from langchain_community.vectorstores import milvus
 from langchain_community.vectorstores import Chroma
 from langchain_community.vectorstores import FAISS
+
 from langchain.chains import RetrievalQA
 from langchain.chains import ConversationalRetrievalChain
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain.chains import create_history_aware_retriever
+from langchain_core.prompts import MessagesPlaceholder
 
 from common.consts import INDEX_NAME
 from common.template import TEMPLATE_CONTEXT
@@ -273,22 +279,56 @@ def vs_setup_faiss(raw_chunks:List[Document],indexname:str) -> FAISS:
     return faiss_vectorstore
 
 
-def build_retrieval_chain(web_url:str, input_question:str)->Any:
+def build_retrieval_chain(input_question:str, retriever: VectorStoreRetriever,llm:BaseLLM)->Any:
 
-    raw_chunks = ingest_Webdocs(web_url)
-    vectore_store = vs_setup_faiss(raw_chunks,"testqs")
-
-    llm= get_llm(2, "llama3", 0)
 
     prompt = ChatPromptTemplate.from_template(TEMPLATE_CONTEXT)
     document_chain = create_stuff_documents_chain(llm, prompt)
 
-    retriever = vectore_store.as_retriever()
+    
     retrieval_chain = create_retrieval_chain(retriever, document_chain)
 
     response = retrieval_chain.invoke({"input":input_question })
 
     return response
+
+
+def build_conversation_retrieval_chain(input_question:str,retriever: VectorStoreRetriever, llm:BaseLLM)->Any:
+
+
+    prompt = ChatPromptTemplate.from_messages([
+    MessagesPlaceholder(variable_name="chat_history"),
+        ("user", "{input}"),
+        ("user", "Given the above conversation, generate a search query to look up to get information relevant to the conversation")
+    ])
+    retriever_chain = create_history_aware_retriever(llm, retriever, prompt)
+
+    chat_history = [HumanMessage(content="Can LangSmith help test my LLM applications?"), AIMessage(content="Yes!")]
+    response = retriever_chain.invoke({
+        "chat_history": chat_history,
+        "input": "Tell me how"
+    })
+
+    print(response)
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", "Answer the user's questions based on the below context:\n\n{context}"),
+        MessagesPlaceholder(variable_name="chat_history"),
+        ("user", "{input}"),
+    ])
+    document_chain = create_stuff_documents_chain(llm, prompt)
+
+    retrieval_chain = create_retrieval_chain(retriever_chain, document_chain)
+
+    chat_history = [HumanMessage(content="Can LangSmith help test my LLM applications?"), AIMessage(content="Yes!")]
+    response = retrieval_chain.invoke({
+        "chat_history": chat_history,
+        "input": "Tell me how"
+    })
+    print(response)
+
+    return response
+
 
 def run_chatllm(rag_setup:int, query:str, chat_history: List[Dict[str,Any]]=[])  -> Any:
 
@@ -388,9 +428,13 @@ if __name__ == "__main__":
         web_url = 'https://docs.smith.langchain.com/user_guide'
         input_question = "how can langsmith help with testing?"
 
-        response = build_retrieval_chain(web_url, input_question)
-        print(response["answer"])
+        llm= get_llm(2, "llama3", 0)
+        
+        raw_chunks = ingest_Webdocs(web_url)
+        vectore_store = vs_setup_faiss(raw_chunks,"Langsmithqs")
+        retriever = vectore_store.as_retriever()
 
-    
+        # response = build_retrieval_chain(input_question,retriever,llm)
+        # print(response["answer"])
 
-    
+        response = build_conversation_retrieval_chain(input_question,retriever,llm)
